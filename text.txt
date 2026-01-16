@@ -1,0 +1,3 @@
+commit test
+git config test
+add test

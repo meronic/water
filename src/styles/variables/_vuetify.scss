@@ -1,0 +1,8 @@
+// ❗ Path must be relative
+// @forward "../../@core/scss/template/libs/vuetify/variables";
+$font-family-custom: 'Spoqa Han Sans Neo', sans-serif;
+// ℹ️ Remove above import and uncomment below to override core variables.
+@forward "../../@core/scss/template/libs/vuetify/variables" with (
+    $progress-linear-indeterminate-animation-duration: 3.0S,
+    $body-font-family: $font-family-custom
+)

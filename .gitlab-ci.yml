@@ -1,0 +1,57 @@
+stages:
+  - deploy
+  - copy
+
+cache:
+  paths:
+  - node_modules/
+
+dev client deploy:
+  tags:
+    - hiway_pp
+  stage: deploy
+  #when: manual
+  #allow_failure: false
+  only:
+    refs:
+      - dev
+  script:
+    - nvm use v16.20.2
+    - npm install
+    - npm run dev
+    - chmod -R 755 dist
+    #- sshpass -p $T_PASS ssh -o StrictHostKeyChecking=no $T_USER_ID@$T_SERVER_IP cd $T_PATH_DEV;rm -rf `ls | find . -name mfe -prune -o -name deployset -prune -o -name mobiletemplate -prune -o -name materiotemplate -prune -o -print`
+    #- sshpass -p $T_PASS scp -o StrictHostKeyChecking=no -r dist/* $T_USER_ID@$T_SERVER_IP:$T_PATH_DEV
+    - > 
+      rsync -rv --rsh="sshpass -p $T_PASS ssh -l $T_USER_ID" --delete --exclude="mfe" --exclude="hinetmfe" --exclude="deployset" --exclude="mobiletemplate"  --exclude="materiotemplate" ./dist/ $T_USER_ID@$T_SERVER_IP:$T_PATH_DEV
+
+client deploy:
+  tags:
+    - hiway_pp
+  stage: deploy
+  #when: manual
+  #allow_failure: false
+  only:
+    refs:
+      - master
+  script:
+    - nvm use v16.20.2
+    - npm install
+    - npm run prod
+    - chmod -R 755 dist
+    - > 
+      rsync -rv --rsh="sshpass -p $T_PASS ssh -l $T_USER_ID" --delete --exclude="mfe" --exclude="hinetmfe" --exclude="deployset" --exclude="mobiletemplate"  --exclude="materiotemplate" ./dist/ $T_USER_ID@$T_SERVER_IP:$T_PATH
+    #- sshpass -p $T_PASS ssh -o StrictHostKeyChecking=no $T_USER_ID@$T_SERVER_IP cd $T_PATH;rm -rf `ls | find . -name mfe -prune -o -name deployset -prune -o -name mobiletemplate -prune -o -name materiotemplate -prune -o -print`
+    #- sshpass -p $T_PASS scp -o StrictHostKeyChecking=no -r dist/* $T_USER_ID@$T_SERVER_IP:$T_PATH
+
+client copy:
+  tags:
+    - hiway_pp
+  stage: copy
+  #when: manual
+  #allow_failure: false
+  only:
+    refs:
+      - master
+  script:
+    - sshpass -p $T_PASS ssh -o StrictHostKeyChecking=no $T_USER_ID@$T_SERVER_IP "/home2/bin/run_copy_1 $T_COPY_PATH"

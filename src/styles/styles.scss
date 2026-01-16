@@ -1,0 +1,46 @@
+// Write your overrides
+@font-face {
+    font-family: 'Spoqa Han Sans Neo';
+    font-weight: 700;
+    src: local('Spoqa Han Sans Neo Bold'),
+    url('/src/assets/font/SpoqaHanSansNeo-Bold.woff2') format('woff2'),
+    url('/src/assets/font/SpoqaHanSansNeo-Bold.woff') format('woff'),
+    url('/src/assets/font/SpoqaHanSansNeo-Bold.otf') format('opentype');
+  }
+  
+  
+  @font-face {
+    font-family: 'Spoqa Han Sans Neo';
+    font-weight: 500;
+    src: local('Spoqa Han Sans Neo Medium'),
+    url('/src/assets/font/SpoqaHanSansNeo-Medium.woff2') format('woff2'),
+    url('/src/assets/font/SpoqaHanSansNeo-Medium.woff') format('woff'),
+    url('/src/assets/font/SpoqaHanSansNeo-Medium.otf') format('opentype');
+  }
+  
+  @font-face {
+    font-family: 'Spoqa Han Sans Neo';
+    font-weight: 400;
+    src: local('Spoqa Han Sans Neo Regular'),
+    url('/src/assets/font/SpoqaHanSansNeo-Regular.woff2') format('woff2'),
+    url('/src/assets/font/SpoqaHanSansNeo-Regular.woff') format('woff'),
+    url('/src/assets/font/SpoqaHanSansNeo-Regular.otf') format('opentype');
+  }
+  
+  @font-face {
+    font-family: 'Spoqa Han Sans Neo';
+    font-weight: 300;
+    src: local('Spoqa Han Sans Neo Light'),
+    url('/src/assets/font/SpoqaHanSansNeo-Light.woff2') format('woff2'),
+    url('/src/assets/font/SpoqaHanSansNeo-Light.woff') format('woff'),
+    url('/src/assets/font/SpoqaHanSansNeo-Light.otf') format('opentype');
+  }
+  
+  @font-face {
+    font-family: 'Spoqa Han Sans Neo';
+    font-weight: 100;
+    src: local('Spoqa Han Sans Neo Thin'),
+    url('/src/assets/font/SpoqaHanSansNeo-Thin.woff2') format('woff2'),
+    url('/src/assets/font/SpoqaHanSansNeo-Thin.woff') format('woff'),
+    url('/src/assets/font/SpoqaHanSansNeo-Thin.otf') format('opentype');
+  }
