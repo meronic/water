@@ -297,22 +297,30 @@ export const useShipStore = defineStore('shipStore', () => {
   //   engineTick()
   //   // 가시성에 따라 주기 조절
   //   if (typeof document !== 'undefined') {
-  //     document.addEventListener('visibilitychange', setEngineIntervalByVisibility)
-  //   }
-  //   setEngineIntervalByVisibility()
-  //   console.log('[shipStore] background engine started')
-  // }
+  // =========================
+  // Mock 모드: 실시간 유량 시뮬레이션
+  // =========================
+  function simulateFlowVariation() {
+    // 모든 ship/tank의 유량을 ±0.5 ㎥/h 범위에서 변동
+    shipList.value.forEach(ship => {
+      ship.tank.forEach(tank => {
+        if (tank.flow > 0) {
+          // 유량이 있을 때만 ±0.1~0.3 정도 변동 시뮬레이션
+          const variation = (Math.random() - 0.5) * 0.6
+          tank.flow = Math.max(0, tank.flow + variation)
+        }
+      })
+    })
+  }
 
-  // function stopBackgroundEngine() {
-  //   if (!engine.value.running) return
-  //   engine.value.running = false
-  //   if (engine.value.timerId) clearInterval(engine.value.timerId)
-  //   engine.value.timerId = null
-  //   if (typeof document !== 'undefined') {
-  //     document.removeEventListener('visibilitychange', setEngineIntervalByVisibility)
-  //   }
-  //   console.log('[shipStore] background engine stopped')
-  // }
+  // Mock 시뮬레이션 시작 (1초~2초 주기로 값 변동)
+  function startFlowSimulation() {
+    if (typeof window === 'undefined') return
+    
+    return setInterval(() => {
+      simulateFlowVariation()
+    }, 1500) // 1.5초마다 유량 값 변동
+  }
 
   // =========================
   // Return
@@ -329,6 +337,8 @@ export const useShipStore = defineStore('shipStore', () => {
     fetchAndInitShipList,
     syncLatestTankDataFromApi,
     refreshReceiveStatus,
+    simulateFlowVariation,
+    startFlowSimulation,
 
     noReceiptSec,
     fetchSettings,

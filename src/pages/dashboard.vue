@@ -25,15 +25,13 @@
           class="tank-card-instance"
         />
       </div>
+    </div>
 
-      <div class="side-tables">
-        <div class="table-half">
-          <TankEventTable
-            :events="eventData || []"
-            caller="dashboard"
-          />
-        </div>
-      </div>
+    <div class="events-section" v-if="eventData && eventData.length">
+      <TankEventTable
+        :events="eventData || []"
+        caller="dashboard"
+      />
     </div>
   </div>
 </template>
@@ -42,7 +40,7 @@
 import axiosIns from '@/plugins/axios'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useTheme } from 'vuetify'
-import TankStatusBoard from '@/components/TankStatusBoard.vue'
+import TankStatusBoard from '@/components/TankStatusBoard_v2.vue'
 import TankEventTable from '@/components/TankEventTable.vue'
 import { useShipStore } from '@/stores/shipStore'
 import { getActiveModulesByShip  } from '@/api/module'
@@ -144,6 +142,7 @@ let eventIntervalId = null
 let flowIntervalId = null
 let receiveIntervalId = null
 let activeRefreshId = null
+let simulationIntervalId = null
 
 onMounted(async () => {
   // 1) 스토어(전체 ship/tank) 초기화
@@ -159,11 +158,14 @@ onMounted(async () => {
     shipStore.selectedShip = dashboardShipList.value[0]?.name || ''
   }
 
-  // 4) 이벤트 최초/주기 로드
+  // 4) Mock 모드: 유량 시뮬레이션 시작
+  simulationIntervalId = shipStore.startFlowSimulation()
+
+  // 5) 이벤트 최초/주기 로드
   fetchEvents()
   eventIntervalId = setInterval(fetchEvents, 10000)
 
-  // 5) 유량/통신상태 최초/주기 로드 (10초)
+  // 6) 유량/통신상태 최초/주기 로드 (10초)
   const loadFlow = async () => {
     if (!shipStore.selectedShip) return
     await shipStore.syncLatestTankDataFromApi(shipStore.selectedShip)
@@ -174,14 +176,14 @@ onMounted(async () => {
 
   flowIntervalId = setInterval(loadFlow, 10000)
 
-  // 6) 수신/미수신 상태만 프론트에서 1초마다 재계산
+  // 7) 수신/미수신 상태만 프론트에서 1초마다 재계산
   receiveIntervalId = setInterval(() => {
     if (shipStore.selectedShip) {
       shipStore.refreshReceiveStatus(shipStore.selectedShip)
     }
   }, 10000)
 
-  // 7) (옵션) active 집합 주기 갱신—사용중/중지 변경 반영
+  // 8) (옵션) active 집합 주기 갱신—사용중/중지 변경 반영
   activeRefreshId = setInterval(async () => {
     const prevShips = JSON.stringify(activeShipNames.value.sort())
 
@@ -207,6 +209,7 @@ onUnmounted(() => {
   if (flowIntervalId) clearInterval(flowIntervalId)
   if (receiveIntervalId) clearInterval(receiveIntervalId)
   if (activeRefreshId) clearInterval(activeRefreshId)
+  if (simulationIntervalId) clearInterval(simulationIntervalId)
 })
 </script>
 
@@ -219,60 +222,136 @@ onUnmounted(() => {
   flex-direction: column;
   box-sizing: border-box;
   overflow: hidden;
+  background: linear-gradient(135deg, #f5f5f5 0%, #f9f9f9 100%);
+}
+
+.dashboard-wrapper.dark-mode {
+  background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
 }
 
 .header {
   display: flex;
   align-items: center;
-  margin-bottom: 8px;
+  gap: 16px;
+  padding: 16px 24px;
   flex: 0 0 auto;
+  background-color: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.dashboard-wrapper.dark-mode .header {
+  background-color: #1e1e2e;
+  border-bottom-color: #4b5563;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.header label {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.dashboard-wrapper.dark-mode .header label {
+  color: #e0e0e0;
 }
 
 .ship-select {
-  appearance: auto;
+  appearance: none;
   background-color: white;
-  color: black;
-  padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid #ccc;
+  color: #1f2937;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 2px solid #d1d5db;
   font-size: 14px;
-  font-weight: bold;
-  width: 140px;
+  font-weight: 600;
+  width: 160px;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
+.dashboard-wrapper.dark-mode .ship-select {
+  background-color: #2d2d3d;
+  color: #e0e0e0;
+  border-color: #4b5563;
+}
+
+.ship-select:hover {
+  border-color: #2563eb;
+}
+
+.ship-select:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
 .main-layout {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
-  gap: 12px;
+  gap: 16px;
   overflow: hidden;
+  padding: 16px 24px;
 }
 
 .tank-status-board {
-  flex: 1 1 74%;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+  flex: 1 1 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+  gap: 16px;
   min-height: 0;
   overflow: auto;
+  padding: 4px;
 }
 
-.side-tables {
-  flex: 1 1 24%;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
+.tank-status-board::-webkit-scrollbar {
+  width: 8px;
 }
 
-.table-half {
-  border-radius: 12px;
-  box-sizing: border-box;
-  flex: 1 1 auto;
-  min-height: 0;
+.tank-status-board::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tank-status-board::-webkit-scrollbar-thumb {
+  background-color: #d1d5db;
+  border-radius: 4px;
+}
+
+.dashboard-wrapper.dark-mode .tank-status-board::-webkit-scrollbar-thumb {
+  background-color: #4b5563;
+}
+
+/* 이벤트 섹션 */
+.events-section {
+  padding: 16px 24px;
+  background-color: white;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
+  border-top: 1px solid #e5e7eb;
+  max-height: 40vh;
   overflow-y: auto;
+}
+
+.dashboard-wrapper.dark-mode .events-section {
+  background-color: #1e1e2e;
+  border-top-color: #4b5563;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.events-section::-webkit-scrollbar {
+  width: 6px;
+}
+
+.events-section::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.events-section::-webkit-scrollbar-thumb {
+  background-color: #d1d5db;
+  border-radius: 3px;
+}
+
+.dashboard-wrapper.dark-mode .events-section::-webkit-scrollbar-thumb {
+  background-color: #4b5563;
 }
 
 /* =========== 좁은 화면(세로로 모두 펼치기) =========== */
@@ -286,11 +365,14 @@ onUnmounted(() => {
     flex-direction: column;
     overflow: visible;
     min-height: auto;
+    gap: 12px;
+    padding: 12px 16px;
   }
 
   .tank-status-board {
     flex: 0 0 auto;
     overflow: visible;
+    gap: 12px;
   }
 
   .side-tables {
@@ -298,20 +380,46 @@ onUnmounted(() => {
     width: 100%;
     min-height: auto;
     overflow: visible;
+    gap: 12px;
   }
 
   .table-half {
     flex: 0 0 auto;
     overflow: visible;
-  }
-
-  .tank-card-instance {
-    width: 100% !important;
+    height: auto;
+    min-height: 300px;
   }
 }
 
 @media (max-width: 600px) {
-  .header { margin-bottom: 6px; }
-  .ship-select { width: 120px; font-size: 13px; }
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 16px;
+  }
+
+  .header label {
+    font-size: 13px;
+  }
+
+  .ship-select {
+    width: 100%;
+    font-size: 13px;
+  }
+
+  .main-layout {
+    padding: 8px 12px;
+    gap: 10px;
+  }
+
+  .tank-status-board {
+    gap: 10px;
+  }
+
+  .events-section {
+    padding: 12px;
+    max-height: 300px;
+  }
 }
 </style>

@@ -11,7 +11,10 @@
     </h3>
 
     <div class="canvas-wrap">
-      <canvas ref="chartRef" style="width: 100%; height: 100%" />
+      <div v-if="!lastTransformed || !lastTransformed.values?.length" class="no-data">
+        <p>📊 데이터 로드 중...</p>
+      </div>
+      <canvas v-else ref="chartRef" style="width: 100%; height: 100%" />
     </div>
   </div>
 </template>
@@ -350,6 +353,7 @@ const fetchDataAndRender = async () => {
     }
 
     const res = await p
+    console.log('[GraphPanel] 그래프 데이터 받음:', props.type, res)
     const transformed = processData(res)
     
     lastTransformed = transformed
@@ -357,7 +361,7 @@ const fetchDataAndRender = async () => {
 
   } catch (err) {
     if (err?.name === 'CanceledError' || err?.name === 'AbortError') return
-    console.error('그래프 API 실패:', err)
+    console.error('[GraphPanel] 그래프 API 실패:', props.type, err)
   } finally {
     if (isDetail.value) loading.value = false
   }
@@ -397,16 +401,26 @@ const renderChart = ({ labels, values, goals }) => {
       {
         label: '실제 주수량',
         data: values,
-        backgroundColor: 'rgba(96, 165, 250, 0.3)',
-        borderColor: 'rgba(96, 165, 250, 1)',
+        backgroundColor: 'rgba(59, 130, 246, 0.15)',
+        borderColor: 'rgba(59, 130, 246, 1)',
+        borderWidth: 3,
         fill: true,
         tension: 0.4,
+        pointRadius: 4,
+        pointBackgroundColor: 'rgba(59, 130, 246, 1)',
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 2,
+        pointHoverRadius: 6,
+        pointHoverBackgroundColor: 'rgba(59, 130, 246, 1)',
+        pointHoverBorderWidth: 3,
       },
       {
         label: '목표 주수량',
         data: goals,
         backgroundColor: 'rgba(139, 92, 246, 0.1)',
-        borderColor: 'rgba(139, 92, 246, 1)',
+        borderColor: 'rgba(139, 92, 246, 0.8)',
+        borderWidth: 2,
+        borderDash: [5, 5],
         fill: true,
         pointRadius: 0,
         tension: 0,
@@ -417,8 +431,12 @@ const renderChart = ({ labels, values, goals }) => {
       {
         label: '시간별 주수량',
         data: values,
-        backgroundColor: 'rgba(96, 165, 250, 0.6)',
-        borderRadius: 4,
+        backgroundColor: 'rgba(59, 130, 246, 0.7)',
+        borderColor: 'rgba(37, 99, 235, 1)',
+        borderWidth: 1,
+        borderRadius: 6,
+        hoverBackgroundColor: 'rgba(37, 99, 235, 0.9)',
+        hoverBorderColor: 'rgba(29, 78, 216, 1)',
       },
     ]
 
@@ -428,17 +446,46 @@ const renderChart = ({ labels, values, goals }) => {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      animation: false,
-      layout: { padding: { right: 10 } },
+      animation: {
+        duration: 0,
+      },
+      layout: { padding: { right: 10, top: 5, bottom: 5 } },
       plugins: {
         legend: {
           position: isMobile ? 'top' : 'right',
           align: 'center',
-          labels: { color: tickColor, boxHeight: 12 },
+          labels: { 
+            color: tickColor, 
+            boxHeight: 12,
+            font: {
+              size: 12,
+              weight: '600',
+            },
+            padding: 12,
+            usePointStyle: true,
+            pointStyle: 'circle',
+          },
         },
         tooltip: {
+          backgroundColor: isDark.value ? 'rgba(15, 23, 42, 0.9)' : 'rgba(31, 41, 55, 0.9)',
+          titleColor: '#ffffff',
+          bodyColor: '#ffffff',
+          borderColor: isDark.value ? 'rgba(75, 85, 99, 0.5)' : 'rgba(229, 231, 235, 0.5)',
+          borderWidth: 1,
+          padding: 12,
+          titleFont: { size: 13, weight: '600' },
+          bodyFont: { size: 12 },
+          displayColors: true,
+          boxPadding: 8,
+          cornerRadius: 6,
           callbacks: {
             label: (c) => `${c.dataset.label}: ${c.parsed.y} m³`,
+            afterLabel: (c) => {
+              if (isAccumulated && c.datasetIndex === 1) {
+                return `목표값: ${c.parsed.y} m³`
+              }
+              return ''
+            },
           },
         },
         datalabels: {
@@ -457,7 +504,6 @@ const renderChart = ({ labels, values, goals }) => {
               weight: xFontWeight,
             },
             callback: function (value, index) {
-
               if (index % step !== 0) return ''
 
               const rawLabel = this.getLabelForValue(value)
@@ -573,8 +619,10 @@ onMounted(() => {
   if (host) ro.observe(host)
   window.addEventListener('resize', handleResize)
 
-  // ✅ 매일 00:00 KST 자동 새로고침
-  scheduleDailyRefreshAtKST0000()
+  // ✅ 자세한 페이지(detailInfo)에서만 자정 자동 새로고침
+  if (isDetail.value) {
+    scheduleDailyRefreshAtKST0000()
+  }
 })
 
 onUnmounted(() => {
@@ -590,7 +638,7 @@ onUnmounted(() => {
 watch(
   () => [props.tankId, props.date, props.type, tankInfo.value],
   () => {
-    // tankInfo가 유효해진 경우에만 로직 실행.. 자꾸 에러가 생기니까, Watch 민감도 조절
+    // tankInfo가 유효해진 경우에만 로직 실행
     if (tankInfo.value) {
       fetchDataAndRender()
     }
@@ -603,8 +651,9 @@ if (props.refresh !== undefined) {
   watch(() => props.refresh, () => { fetchDataAndRender() })
 }
 
-// measurement/uuid 변경 시 재조회
+// measurement/uuid 변경 시 재조회 (detailInfo에서만 주로 사용)
 watch(() => [props.measurement, tankInfo.value?.uuid, shipStore.selectedDeviceUuid], () => {
+  if (!isDetail.value) return
   lastTransformed = null
   if (chartInstance) { chartInstance.destroy(); chartInstance = null }
   fetchDataAndRender()
@@ -615,25 +664,64 @@ watch(() => [props.measurement, tankInfo.value?.uuid, shipStore.selectedDeviceUu
 .graph-card {
   display: flex;
   flex-direction: column;
-  padding: 12px 16px;
+  padding: 16px;
   border-radius: 12px;
   height: 100%;
-  min-height: 175px;
-
-  /* 겹침 방지 */
+  min-height: 250px;
   position: relative;
   z-index: 1;
   overflow: hidden;
+  border: 1px solid transparent;
+  transition: all 0.3s ease;
 }
-.graph-card.fill-height { height: 100% !important; }
 
-.graph-card.dark-mode { color: white; }
-.graph-card.light-mode { background-color: #ffffff; color: #222; }
+.graph-card.fill-height { 
+  height: 100% !important; 
+}
+
+.graph-card.light-mode {
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  color: #222;
+  border-color: #e5e7eb;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.graph-card.dark-mode {
+  background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
+  color: #e2e8f0;
+  border-color: #4b5563;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+.graph-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.graph-card.dark-mode:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
 
 .graph-title {
-  font-size: 14px;
-  font-weight: bold;
-  margin-bottom: 6px;
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.graph-title::before {
+  content: '📊';
+  font-size: 16px;
+}
+
+.graph-card.light-mode .graph-title {
+  color: #1f2937;
+}
+
+.graph-card.dark-mode .graph-title {
+  color: #f0f4f8;
 }
 
 /* 캔버스 래퍼 */
@@ -641,14 +729,54 @@ watch(() => [props.measurement, tankInfo.value?.uuid, shipStore.selectedDeviceUu
   position: relative;
   width: 100%;
   flex: 1 1 auto;
-  min-height: 140px;
+  min-height: 200px;
   height: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.1) 100%);
+  border-radius: 8px;
+  padding: 8px;
+}
 
-  overflow: hidden;  /* 캔버스 영역 넘침 차단 */
+.graph-card.dark-mode .canvas-wrap {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.01) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* 데이터 없음 메시지 */
+.no-data {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
+.graph-card.light-mode .no-data {
+  color: #9ca3af;
+}
+
+.graph-card.dark-mode .no-data {
+  color: #6b7280;
 }
 
 @media (max-width: 750px) {
-  .graph-card { min-height: 175px; }
-  .canvas-wrap { min-height: 140px; }
+  .graph-card { 
+    min-height: 220px;
+    padding: 12px;
+  }
+  .canvas-wrap { 
+    min-height: 180px;
+  }
+  .graph-title {
+    font-size: 13px;
+    margin-bottom: 10px;
+  }
 }
 </style>

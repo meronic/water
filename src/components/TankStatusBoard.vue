@@ -142,7 +142,7 @@ const fetchTankHeight = async () => {
       current_volume: tank.value.actual,
     })
 
-    if(height !== 0)
+    if(height && height.currentheight)
       currentHeight.value = height.currentheight
 
     const maxheight = await getTankMaxHeight({
@@ -150,13 +150,15 @@ const fetchTankHeight = async () => {
       tank_name: tank.value.name,
     })
 
-    if(maxheight === 0) 
-      maxHeight.value = 1
+    if(maxheight && maxheight.maxheight) 
+      maxHeight.value = maxheight.maxheight
     else 
-      maxHeight.value =maxheight.maxheight
+      maxHeight.value = 1
 
   } catch (e) {
     console.error('수위 계산 실패:', e)
+    currentHeight.value = 0
+    maxHeight.value = 1
   }
 }
 
