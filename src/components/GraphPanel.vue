@@ -11,15 +11,7 @@
     </h3>
 
     <div class="canvas-wrap">
-      <canvas v-if="!loading && transformedData?.values?.length" ref="chartRef" style="width: 100%; height: 100%" />
-      <div v-else-if="loading" class="loading-state">
-        <v-icon icon="mdi-loading" size="32" class="spinner" />
-        <p>데이터 로드 중...</p>
-      </div>
-      <div v-else class="empty-state">
-        <v-icon icon="mdi-chart-box-outline" size="32" />
-        <p>데이터가 없습니다</p>
-      </div>
+      <canvas ref="chartRef" style="width: 100%; height: 100%" />
     </div>
   </div>
 </template>
@@ -28,6 +20,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useTheme } from 'vuetify'
 import { Chart, registerables } from 'chart.js'
+import axiosIns from '@/plugins/axios'
 import { useShipStore } from '@/stores/shipStore'
 import { getFlowData } from '@/api/flow'
 
@@ -47,14 +40,15 @@ const isDetail = computed(() => props.from === 'detail')
 
 const { global: theme } = useTheme()
 const isDark = computed(() => theme.current.value.dark)
-const graphTitle = computed(() => (props.type === 'accumulated' ? '누적 주수량' : '시간당 주수량'))
+const graphTitle = computed(() => (props.type === 'accumulated' ? '누적 주수량' : '시간별 주수량'))
 
 const loading = ref(false)
 const chartRef = ref(null)
 let chartInstance = null
-const transformedData = ref(null)
+let lastTransformed = null
 let ro = null
 
+// ✅ KST 자정 자동 새로고침 타이머
 let dailyRefreshTimeout = null
 let dailyRefreshInterval = null
 
@@ -109,11 +103,12 @@ const downsampleTriple = (labels, values, goals, maxPoints = 200) => {
   return { labels: newLabels, values: newValues, goals: newGoals }
 }
 
+// ✅ 요청 캐시 & TTL
 const queryCache = new Map()
 const cacheTTLms = 30_000
 const ttlTimers = new Map()
 function makeCacheKey(url, params) {
-  const sorted = Object.fromEntries(Object.entries(params || {}).sort(([a], [b]) => a.localeCompare(b)))
+  const sorted = Object.fromEntries(Object.entries(params || {}).sort(([a],[b]) => a.localeCompare(b)))
   return `${url}?${JSON.stringify(sorted)}`
 }
 function setCache(key, promise) {
@@ -138,10 +133,10 @@ const kstDayRangeISO = () => {
     return now.toLocaleString('sv-SE', { timeZone: tz }).slice(0, 10)
   }
 
-  const ymd = getKstYmd()
+  const ymd =  getKstYmd()
 
   const startKst = new Date(`${ymd}T00:00:00+09:00`)
-  const endKst = new Date(`${ymd}T23:59:59.999+09:00`)
+  const endKst   = new Date(`${ymd}T23:59:59.999+09:00`)
 
   return {
     startISO: startKst.toISOString(),
@@ -149,6 +144,12 @@ const kstDayRangeISO = () => {
   }
 }
 
+/* =========================================================
+   변환 로직
+   - accumulated: 소스별 시간버킷 마지막값 → 합산(A+B)
+   - hourly     : (버킷별 A+B 총합)의 연속 차분 → 시간별(A+B)
+   ========================================================= */
+// eslint-disable-next-line sonarjs/cognitive-complexity
 const processData = (rawData) => {
   const rows = (rawData || []).filter(
     r => r.time && !isNaN(new Date(r.time)) && !isNaN(Number(r.value))
@@ -168,6 +169,7 @@ const processData = (rawData) => {
 
   const MAX_POINTS = computeMaxPoints()
 
+  // ---- 소스 키 강화 (충돌 방지)
   const srcOf = (r) => {
     const u = r.device_uuid ?? r.uuid ?? r.device ?? ''
     const m = r.measurement ?? r.meas ?? r.src ?? ''
@@ -181,7 +183,7 @@ const processData = (rawData) => {
     const lastBySrcBucket = new Map()
     for (const r of rows) {
       const src = srcOf(r)
-      const bk = bucketKey(r.time)
+      const bk  = bucketKey(r.time)
       const tMs = new Date(r.time).getTime()
       if (!lastBySrcBucket.has(src)) lastBySrcBucket.set(src, new Map())
       const m = lastBySrcBucket.get(src)
@@ -201,7 +203,7 @@ const processData = (rawData) => {
 
     const labels = []
     const values = []
-    const goals = []
+    const goals  = []
 
     for (const bk of sortedBuckets) {
       let sumV = 0
@@ -223,10 +225,10 @@ const processData = (rawData) => {
   }
 
   if (props.type === 'hourly') {
-    const lastBySrcBucket = new Map()
+    const lastBySrcBucket = new Map() // src -> Map(bk -> {t, v})
     for (const r of rows) {
       const src = srcOf(r)
-      const bk = bucketKey(r.time)
+      const bk  = bucketKey(r.time)
       const tMs = new Date(r.time).getTime()
       if (!lastBySrcBucket.has(src)) lastBySrcBucket.set(src, new Map())
       const m = lastBySrcBucket.get(src)
@@ -240,7 +242,7 @@ const processData = (rawData) => {
     for (const m of lastBySrcBucket.values()) for (const k of m.keys()) bucketSet.add(k)
     const sortedBuckets = Array.from(bucketSet).sort()
 
-    const bucketSums = []
+    const bucketSums = [] // [bk, sumV]
     for (const bk of sortedBuckets) {
       let sumV = 0
       for (const m of lastBySrcBucket.values()) {
@@ -267,9 +269,15 @@ const processData = (rawData) => {
   return { labels: [], values: [], goals: [] }
 }
 
+/* =========================================================
+   데이터 fetch + 렌더
+   - ⏰ detail이 아니면 KST 자정~23:59:59.999 범위(start/end) 전달
+   ========================================================= */
+// eslint-disable-next-line sonarjs/cognitive-complexity
 const fetchDataAndRender = async () => {
+
   if (!tankInfo.value || !shipNo.value) {
-    console.warn('그래프 데이터를 불러올 수 없습니다: tankInfo 또는 shipNo 없음', { tankInfo: tankInfo.value, shipNo: shipNo.value })
+    console.warn('그래프 데이터 부족: tankInfo 또는 shipNo 없음')
     return
   }
 
@@ -294,7 +302,6 @@ const fetchDataAndRender = async () => {
       unit: props.interval,
       shipNo: shipNo.value,
       tankName: tankInfo.value.name,
-      type: props.type,
     }
 
     if (measurements.length) {
@@ -304,6 +311,7 @@ const fetchDataAndRender = async () => {
       params.measurement = props.measurement
     }
 
+    // ✅ UUID 기반 조회 유지
     if (uuids.length > 1) {
       params.deviceUuids = uuids.join(',')
     } else if (uuids.length === 1) {
@@ -316,8 +324,9 @@ const fetchDataAndRender = async () => {
 
     if (!isDetail.value) {
       const { startISO, endISO } = kstDayRangeISO()
+
       params.start = startISO
-      params.end = endISO
+      params.end   = endISO
     }
 
     const url = '/flow/data'
@@ -329,16 +338,23 @@ const fetchDataAndRender = async () => {
     let p = queryCache.get(key)
     if (!p) {
       p = await getFlowData(params, { signal: currentController.signal })
+
+      /*
+      p = axiosIns.get(url, {
+        params,
+        paramsSerializer: prms => new URLSearchParams(prms).toString(),
+        signal: currentController.signal,
+      })
+      */
       setCache(key, p)
     }
 
     const res = await p
-    console.log(`[GraphPanel] 데이터 수신 (${props.type}):`, { tankId: props.tankId, dataCount: res?.length, type: props.type })
     const transformed = processData(res)
-    console.log(`[GraphPanel] 데이터 변환 (${props.type}):`, { tankId: props.tankId, labels: transformed.labels.length, values: transformed.values.length })
-
-    transformedData.value = transformed
+    
+    lastTransformed = transformed
     renderChart(transformed)
+
   } catch (err) {
     if (err?.name === 'CanceledError' || err?.name === 'AbortError') return
     console.error('그래프 API 실패:', err)
@@ -347,6 +363,7 @@ const fetchDataAndRender = async () => {
   }
 }
 
+// eslint-disable-next-line sonarjs/cognitive-complexity
 const renderChart = ({ labels, values, goals }) => {
   if (!chartRef.value || !values.length) {
     if (chartInstance) { chartInstance.destroy(); chartInstance = null }
@@ -361,15 +378,18 @@ const renderChart = ({ labels, values, goals }) => {
 
   const isMobile = window.innerWidth <= 750
   const desiredMax = isMobile ? 4 : 20
-  const isDetailView = props.from === 'detail'
+  const isDetail = props.from === 'detail'
 
-  const useDetailStyle = isDetailView && !isMobile
+  const useDetailStyle = isDetail && !isMobile 
+
   const xTickColor = useDetailStyle ? '#404040' : tickColor
-  const xFontSize = useDetailStyle
-    ? 20
+  
+  const xFontSize = useDetailStyle 
+    ? 20 
     : (isMobile ? Math.max(8, Math.floor(window.innerWidth / 40)) : 14)
 
   const xFontWeight = useDetailStyle ? 'bold' : 'normal'
+
   const step = Math.max(1, Math.ceil(labels.length / desiredMax))
 
   const datasets = isAccumulated
@@ -395,7 +415,7 @@ const renderChart = ({ labels, values, goals }) => {
     ]
     : [
       {
-        label: '시간당 주수량',
+        label: '시간별 주수량',
         data: values,
         backgroundColor: 'rgba(96, 165, 250, 0.6)',
         borderRadius: 4,
@@ -437,16 +457,18 @@ const renderChart = ({ labels, values, goals }) => {
               weight: xFontWeight,
             },
             callback: function (value, index) {
+
               if (index % step !== 0) return ''
 
               const rawLabel = this.getLabelForValue(value)
 
-              if (!isDetailView) return rawLabel
+              if (!isDetail) return rawLabel
 
               const match = rawLabel.match(/(\d+)\.\s*(\d+)\.\s*(\d+):(\d+)/)
+              
               if (!match) return rawLabel
 
-              const [, m, d, hh, mm] = match
+              const [_, m, d, hh, mm] = match
               const datePart = `${m}/${d}`
               const timePart = `${hh}:${mm}`
 
@@ -469,6 +491,7 @@ const renderChart = ({ labels, values, goals }) => {
                 }
               }
 
+              // 날짜가 다를 때만 배열로 반환하여 줄바꿈 처리
               return showDate ? [datePart, timePart] : timePart
             },
           },
@@ -490,13 +513,14 @@ const renderChart = ({ labels, values, goals }) => {
   })
 }
 
+// ✅ 리사이즈/다크모드 재렌더 rAF 스로틀
 let rafId = 0
 
 const rerenderThrottled = () => {
   if (rafId) cancelAnimationFrame(rafId)
   rafId = requestAnimationFrame(() => {
     rafId = 0
-    if (transformedData.value) renderChart(transformedData.value)
+    if (lastTransformed) renderChart(lastTransformed)
   })
 }
 
@@ -509,6 +533,9 @@ const msUntilNextKST0000 = () => {
   const m = kstNow.getUTCMonth()
   const d = kstNow.getUTCDate()
 
+  // 다음날 00:00 KST == Date.UTC(y, m, d+1, -9, 0, 0, 0)
+
+  // UTC로 모든것을 계산한 뒤에 Display만 하도록... 상위단부터 변경필요. ToDo_251217_HJS
   const nextMidnightUtcMs = Date.UTC(y, m, d + 1, -9, 0, 0, 0)
   return Math.max(0, nextMidnightUtcMs - nowUtcMs)
 }
@@ -517,7 +544,10 @@ const scheduleDailyRefreshAtKST0000 = () => {
   const delay = msUntilNextKST0000()
 
   dailyRefreshTimeout = setTimeout(() => {
+    // 1) 자정 트리거 시 즉시 갱신
     fetchDataAndRender()
+
+    // 2) 이후 24시간 간격 고정
     dailyRefreshInterval = setInterval(() => {
       fetchDataAndRender()
     }, 24 * 60 * 60 * 1000)
@@ -542,6 +572,8 @@ onMounted(() => {
   const host = chartRef.value?.closest('.graph-card')
   if (host) ro.observe(host)
   window.addEventListener('resize', handleResize)
+
+  // ✅ 매일 00:00 KST 자동 새로고침
   scheduleDailyRefreshAtKST0000()
 })
 
@@ -550,12 +582,15 @@ onUnmounted(() => {
   if (ro) { ro.disconnect(); ro = null }
   window.removeEventListener('resize', handleResize)
   if (currentController) currentController.abort()
+
+  // ✅ 타이머 정리
   clearDailyRefreshTimers()
 })
 
 watch(
-  () => [props.tankId, props.type, tankInfo.value],
+  () => [props.tankId, props.date, props.type, tankInfo.value],
   () => {
+    // tankInfo가 유효해진 경우에만 로직 실행.. 자꾸 에러가 생기니까, Watch 민감도 조절
     if (tankInfo.value) {
       fetchDataAndRender()
     }
@@ -568,14 +603,12 @@ if (props.refresh !== undefined) {
   watch(() => props.refresh, () => { fetchDataAndRender() })
 }
 
-watch(
-  () => [props.measurement, tankInfo.value?.uuid, shipStore.selectedDeviceUuid],
-  () => {
-    transformedData.value = null
-    if (chartInstance) { chartInstance.destroy(); chartInstance = null }
-    fetchDataAndRender()
-  }
-)
+// measurement/uuid 변경 시 재조회
+watch(() => [props.measurement, tankInfo.value?.uuid, shipStore.selectedDeviceUuid], () => {
+  lastTransformed = null
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null }
+  fetchDataAndRender()
+})
 </script>
 
 <style scoped>
@@ -585,83 +618,37 @@ watch(
   padding: 12px 16px;
   border-radius: 12px;
   height: 100%;
-  min-height: 200px;
+  min-height: 175px;
+
+  /* 겹침 방지 */
   position: relative;
   z-index: 1;
   overflow: hidden;
 }
+.graph-card.fill-height { height: 100% !important; }
 
-.graph-card.fill-height {
-  height: 100% !important;
-}
-
-.graph-card.dark-mode {
-  color: white;
-  background-color: rgba(15, 23, 42, 0.65);
-}
-
-.graph-card.light-mode {
-  background-color: #ffffff;
-  color: #222;
-}
+.graph-card.dark-mode { color: white; }
+.graph-card.light-mode { background-color: #ffffff; color: #222; }
 
 .graph-title {
   font-size: 14px;
-  font-weight: 700;
+  font-weight: bold;
   margin-bottom: 6px;
 }
 
+/* 캔버스 래퍼 */
 .canvas-wrap {
   position: relative;
   width: 100%;
   flex: 1 1 auto;
   min-height: 140px;
   height: 100%;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 
-.loading-state,
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  gap: 8px;
-  color: rgba(0, 0, 0, 0.4);
-}
-
-.dark-mode .loading-state,
-.dark-mode .empty-state {
-  color: rgba(255, 255, 255, 0.4);
-}
-
-.loading-state p,
-.empty-state p {
-  font-size: 12px;
-  margin: 0;
-}
-
-.spinner {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  overflow: hidden;  /* 캔버스 영역 넘침 차단 */
 }
 
 @media (max-width: 750px) {
-  .graph-card {
-    min-height: 175px;
-  }
-
-  .canvas-wrap {
-    min-height: 140px;
-  }
+  .graph-card { min-height: 175px; }
+  .canvas-wrap { min-height: 140px; }
 }
 </style>

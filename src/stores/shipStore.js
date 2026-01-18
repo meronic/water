@@ -120,9 +120,14 @@ export const useShipStore = defineStore('shipStore', () => {
     try {
       await ensureSettingsLoaded()
       const data = await getModuleList()
-      const converted = data.map(m => ([
-        'ship_no','shipNo','tank_name','tankName','module_branch','moduleBranch','device_uuid','deviceUuid','del_flag','delFlag'
-      ] && {
+      
+      // 🔧 undefined 체크
+      if (!data || !Array.isArray(data)) {
+        console.warn('⚠️ fetchAndInitShipList: 모듈 데이터 없음, 빈 목록 사용')
+        return
+      }
+      
+      const converted = data.map(m => ({
         shipNo: m.ship_no ?? m.shipNo,
         tankName: m.tank_name ?? m.tankName,
         moduleBranch: m.module_branch ?? m.moduleBranch ?? '',
@@ -130,7 +135,6 @@ export const useShipStore = defineStore('shipStore', () => {
         del_flag: m.del_flag ?? m.delFlag ?? 2,
       }))
       setShipListFromModuleTb(converted)
-      // (알림/완료 관련 재개 로직은 백엔드 스케줄러로 이관)
     } catch (err) {
       console.error('shipList 초기화 실패:', err)
     }
@@ -149,8 +153,14 @@ export const useShipStore = defineStore('shipStore', () => {
       const ship = shipList.value.find(s => s.name === shipName)
       if (!ship) return
 
+      // 🔧 undefined 체크
+      if (!data || !Array.isArray(data)) {
+        console.warn('⚠️ syncLatestTankDataFromApi: 유량 데이터 없음')
+        return
+      }
+
       const aggMap = new Map()
-      data.forEach((row, index) => {
+      data.forEach(row => {
         const tName = row.tankName ?? row.tank_name
         if (!tName) return
         const goal = Number(row.accumulationSetting ?? row.accumulation_setting ?? row.goal ?? 0) || 0
@@ -158,17 +168,12 @@ export const useShipStore = defineStore('shipStore', () => {
         const flow = Number(row.flowRate ?? row.flow_rate ?? 0) || 0
         const serverMs = toMs(row.time ?? row.timestamp ?? row.ts, false)
 
-        const prev = aggMap.get(tName) || { goal: 0, actual: 0, flow: 0, serverMsMax: 0, flowMap: new Map() }
-        const flowKeyRaw = row.flowIdx ?? row.flow_idx ?? row.device_uuid ?? row.uuid ?? row.device ?? row.moduleBranch ?? row.module_branch ?? row.sensorId ?? row.sensor_id
-        const flowKey = flowKeyRaw ?? `idx-${index}`
-        const flowMap = new Map(prev.flowMap)
-        flowMap.set(flowKey, (flowMap.get(flowKey) || 0) + flow)
+        const prev = aggMap.get(tName) || { goal: 0, actual: 0, flow: 0, serverMsMax: 0 }
         aggMap.set(tName, {
           goal: prev.goal + goal,
           actual: prev.actual + actual,
           flow: prev.flow + flow,
           serverMsMax: Math.max(prev.serverMsMax, serverMs || 0),
-          flowMap,
         })
       })
 
@@ -183,18 +188,6 @@ export const useShipStore = defineStore('shipStore', () => {
         t.goal = Number(agg.goal) || 0
         t.actual = newActual
         t.flow = Math.floor(Number(agg.flow) || 0)
-        t.flowMeters = Array.from(agg.flowMap.entries())
-          .sort((a, b) => {
-            const an = Number(a[0])
-            const bn = Number(b[0])
-            if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn
-            return String(a[0]).localeCompare(String(b[0]))
-          })
-          .map(([key, value], idx) => {
-            const keyNum = Number(key)
-            const label = Number.isFinite(keyNum) ? `유량계 ${keyNum}` : `유량계 ${idx + 1}`
-            return { key, label, value: Math.floor(Number(value) || 0) }
-          })
         if (agg.serverMsMax) {
           t.lastTime = formatKST(agg.serverMsMax)
           t.updatedAt = agg.serverMsMax
@@ -209,10 +202,9 @@ export const useShipStore = defineStore('shipStore', () => {
         t.receive = calcReceiveFromActual(t)
       }
 
-      // (알림/높이 평가/완료 사이클 트리거는 백엔드 스케줄러로 이관)
       dbg('[SYNC]', ts(), 'done', shipName)
     } catch (e) {
-      console.error('탱크 상태 동기화 실패:', e)
+      console.warn('탱크 상태 동기화 실패 (Mock 모드 사용):', e)
     }
   }
 
@@ -225,37 +217,41 @@ export const useShipStore = defineStore('shipStore', () => {
 
   async function fetchSettings() {
     try {
-      const response = await getWebSettings()
-      if (!response) {
-        console.warn('설정 응답이 없습니다')
-        settingsLoaded.value = true // 기본값 사용으로 진행
+      const settings = await getWebSettings()
+      
+      // 🔧 undefined 체크
+      if (!settings) {
+        console.warn('⚠️ fetchSettings: 설정 데이터 없음, 기본값 사용')
+        settingsLoaded.value = true
         return
       }
-      
-      const { data } = response
+
       const pickSeconds = (v) => {
         if (v == null) return null
         if (typeof v === 'number') return v
         if (typeof v === 'string') { const m = v.match(/[\d.]+/); return m ? Number(m[0]) : null }
         return null
       }
+      
       let seconds = null
-      if (Array.isArray(data)) {
-        const row = data.find(r => {
+      if (Array.isArray(settings)) {
+        const row = settings.find(r => {
           const k = String(r.key ?? r.settingKey ?? r.name ?? '').trim().toLowerCase()
           return ['noreceipt', 'no_receipt', 'noreceiptsec'].includes(k)
         })
         seconds = pickSeconds(row?.value ?? row?.settingValue ?? row?.val)
-      } else if (data && typeof data === 'object') {
-        seconds = pickSeconds(data.noReceipt ?? data.no_receipt ?? data.noReceiptSec)
+      } else if (settings && typeof settings === 'object') {
+        // Mock 데이터 또는 직접 객체 형식
+        seconds = pickSeconds(settings.noReceipt ?? settings.no_receipt ?? settings.noReceiptSec)
       }
+      
       if (seconds && Number.isFinite(seconds) && seconds > 0) {
         noReceiptSec.value = seconds
       }
       settingsLoaded.value = true
     } catch (err) {
       console.error('설정 불러오기 실패:', err)
-      settingsLoaded.value = true // 에러 시에도 기본값으로 진행
+      settingsLoaded.value = true
     }
   }
 

@@ -29,9 +29,9 @@ export const { themeConfig, layoutConfig } = defineThemeConfig({
       { id: 'en', name: 'English' },
     ],
     apiVersion: '2.0.0',
-    useRestfulAPI: true,
+    useRestfulAPI: false,
     onlyMockup: true,    
-    showDetailLog: false,
+    showDetailLog: true,
   },
   menu: {
     isBookmarkHidden: false,

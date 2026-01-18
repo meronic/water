@@ -1,30 +1,13 @@
 import axiosIns from '@/lib/http'
 import request from '@/utils/request'
 import { isUseAPI } from '@hiway/utils/check'
+import mockModuleList from './mock/moduleList.json'
 import mockModules from './mock/modules.json'
 
 const contextPath = import.meta.env.VITE_API_BASE_URL
 
 /** 장치 목록 조회 */
 export async function getDevices() {
-  /*
-  const { data } = await axiosIns.get('/module/devices2')  
-
-  // 그대로 넘겨도 되지만, 여기서 1차 매핑까지 해두면 컴포넌트가 가벼워짐
-  return (data || []).map(d => ({
-    idx: d.module_idx,
-    name: d.module_name,
-    uuid: d.device_uuid,
-    ship: d.ship_no,
-    tank: d.tank_name,
-    branch: d.module_branch,
-    createdAt: d.createdAt,
-    updatedAt: d.updatedAt,
-    del_flag: d.del_flag,
-  }))  
-  */
-
-  
   if(isUseAPI()) {
     const rows =  await  request({
       url: `${contextPath}/module/devices`,
@@ -33,7 +16,6 @@ export async function getDevices() {
         apiVersion: '2.0.0',
       },
     })  
-
 
     // 그대로 넘겨도 되지만, 여기서 1차 매핑까지 해두면 컴포넌트가 가벼워짐
     return (rows || []).map(d => ({
@@ -48,22 +30,24 @@ export async function getDevices() {
       del_flag: d.del_flag,
     }))
   }
-
-  return (mockModules || []).map(d => ({
-    idx: d.module_idx,
-    name: d.module_name,
-    uuid: d.device_uuid,
-    ship: d.ship_no,
-    tank: d.tank_name,
-    branch: d.module_branch,
-    createdAt: d.createdAt,
-    updatedAt: d.updatedAt,
-    del_flag: d.del_flag,
-  }))  
-    
   
-
-
+  // 🔧 Mock 데이터 반환
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      const rows = mockModules.data || []
+      resolve(rows.map(d => ({
+        idx: d.module_idx,
+        name: d.module_name,
+        uuid: d.device_uuid,
+        ship: d.ship_no,
+        tank: d.tank_name,
+        branch: d.module_branch,
+        createdAt: d.createdAt,
+        updatedAt: d.updatedAt,
+        del_flag: d.del_flag,
+      })))
+    }, 300)
+  })
 }
 export async function deleteModules(targets) {
   /*
@@ -120,8 +104,6 @@ export async function activateModules(targets) {
 }
 
 export async function getModuleList() {
-/*  const { data } = await axiosIns.get('/module/list')
-  return Array.isArray(data) ? data : []*/
   if(isUseAPI()) {
     return request({
       url: `${contextPath}/module/list`,
@@ -132,7 +114,12 @@ export async function getModuleList() {
     })    
   }
   
-  return mockModules || []
+  // 🔧 Mock 데이터
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve(mockModuleList || [])
+    }, 300)
+  })
 }
 
 /** ✅ 모듈 등록 */
@@ -177,6 +164,12 @@ export async function updateModule(payload) {
 export async function getActiveModulesByShip() {
   const data = await getModuleList()
   const next = {}
+
+  // 🔧 undefined 체크
+  if (!data || !Array.isArray(data)) {
+    console.warn('⚠️ getActiveModulesByShip: 데이터 없음, 빈 객체 반환')
+    return next
+  }
 
   data.forEach(m => {
     const del = Number(m.del_flag ?? m.delFlag ?? 2)

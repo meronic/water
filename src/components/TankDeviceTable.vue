@@ -1,141 +1,189 @@
 <template>
-  <div class="device-wrapper">
-    <div v-if="devices.length" class="device-list">
-      <div
-        v-for="(device, idx) in devices"
-        :key="idx"
-        class="device-row"
-        :class="[getStatus(device)]"
-      >
-        <div class="device-name">{{ device.name || `장비 ${idx + 1}` }}</div>
-        <div class="device-middle">
-          <span class="status-text">{{ device.receive || '미수신' }}</span>
-        </div>
-        <div class="device-time">{{ formatTime(device.lastTime) }}</div>
-      </div>
-    </div>
-    <div v-else class="device-empty">
-      <v-icon icon="mdi-alert-outline" size="20" />
-      <span>등록된 장비가 없습니다</span>
-    </div>
+  <div
+    class="device-table-card"
+    :class="[isDark ? 'dark-mode' : 'light-mode']"
+  >
+    <h3 class="table-title">
+      통신상태
+    </h3>
+    <table class="device-table">
+      <thead>
+        <tr>
+          <th colspan="2">
+            통신상태
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr
+          v-for="(device, index) in devices"
+          :key="index"
+        >
+          <td
+            class="comm-status"
+            :class="[device.receive === '수신' ? 'on' : 'off']"
+          >
+            {{ device.receive }}
+          </td>
+        </tr>
+        <tr>
+          <th colspan="2">
+            최종 수신시간
+          </th>
+        </tr>
+        <tr
+          v-for="(device, index) in devices"
+          :key="'time-' + index"
+        >
+          <td colspan="2">
+            {{ lastTimes[index] ?? '-' }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
   </div>
 </template>
 
 <script setup>
-import { defineProps, computed } from 'vue'
+import { useTheme } from 'vuetify'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useShipStore } from '@/stores/shipStore'
+import axiosIns from '@/plugins/axios'
+import { getFlowLastTime } from '@/api/flow'
 
-defineProps({
-  devices: { type: Array, default: () => [] },
-  tank_name: { type: String, required: true },
+const props = defineProps({
+  devices: {
+    type: Array,
+    required: true,
+  },
+  tank_name: {
+    type: String,
+    required: "",
+  },
 })
 
-// 상태 클래스 가져오기
-const getStatus = (device) => {
-  return device.receive === '수신' ? 'active' : 'inactive'
-}
 
-// 시간 포맷팅
-const formatTime = (dateStr) => {
-  if (!dateStr) return '-'
+const shipStore = useShipStore()
+
+const { global: theme } = useTheme()
+const isDark = computed(() => theme.current.value.dark)
+
+// 최종 수신시간 관리
+const lastTimes = ref([])
+
+const fetchLastTime = async (device, index) => {
   try {
-    const date = new Date(dateStr)
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    return `${hours}:${minutes}`
-  } catch {
-    return dateStr
+    // 미수신이 아닐 땐 그대로 표시
+    if (device.receive !== '미수신') {
+      lastTimes.value[index] = device.lastTime || '-'
+      return
+    }
+
+    const data = await getFlowLastTime({
+      ship_no: shipStore.selectedShip,
+      tank_name: props.tank_name,
+    })
+
+    if (data?.lastTime) {
+      lastTimes.value[index] = data.lastTime
+    } else {
+      lastTimes.value[index] = '-'
+    }
+  } catch (err) {
+    console.error('last-time 조회 실패:', err)
+    lastTimes.value[index] = '-'
   }
 }
+
+// devices 변경될 때마다 다시 갱신
+watch(
+  () => props.devices,
+  (newDevices) => {
+    lastTimes.value = new Array(newDevices.length).fill('-')
+    newDevices.forEach((d, i) => fetchLastTime(d, i))
+  },
+  { immediate: true, deep: true }
+)
 </script>
 
 <style scoped>
-.device-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.device-table-card {
+  padding: 12px;
+  border-radius: 12px;
+  min-width: 0;
+  overflow-x: auto;
+  font-family: sans-serif;
+  flex: 1 1 0%;
+  max-width: 320px;
+  margin: 0 auto;
+  justify-items: center;
 }
 
-.device-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.device-row {
-  display: grid;
-  grid-template-columns: 120px 60px 60px;
-  gap: 12px;
-  align-items: center;
-  padding: 10px;
-  border-radius: 6px;
-  border-left: 3px solid #d1d5db;
-  background: rgba(0, 0, 0, 0.02);
-  font-size: 12px;
-  transition: all 0.2s ease;
-}
-
-.device-row.active {
-  border-left-color: #10b981;
-  background: rgba(16, 185, 129, 0.08);
-}
-
-.device-row.inactive {
-  border-left-color: #ef4444;
-  background: rgba(239, 68, 68, 0.08);
-}
-
-.device-name {
-  font-weight: 600;
-  color: #0e1a2b;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.device-middle {
+.device-table {
+  border-collapse: collapse;
+  font-size: 14px;
+  min-width: 250px;
+  width: 100%;
   text-align: center;
 }
 
-.status-text {
-  padding: 3px 8px;
-  border-radius: 3px;
-  font-weight: 600;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+.device-table th,
+.device-table td {
+  padding: 8px;
+  border: 1px solid #ccc;
 }
 
-.device-row.active .status-text {
-  background: rgba(16, 185, 129, 0.2);
-  color: #059669;
+.device-table tr:hover {
+  background-color: #eee;
 }
 
-.device-row.inactive .status-text {
-  background: rgba(239, 68, 68, 0.2);
-  color: #dc2626;
+.device-table-card.dark-mode {
+  background-color: #2b2b3b;
+  color: white;
 }
 
-.device-time {
-  text-align: right;
-  color: #9aacbe;
-  font-family: 'Courier New', monospace;
+.device-table-card.dark-mode .device-table th,
+.device-table-card.dark-mode .device-table td {
+  border-color: #444;
 }
 
-.device-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 20px;
-  color: #9aacbe;
-  font-size: 12px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.02);
+.device-table-card.dark-mode .device-table thead,
+.device-table-card.dark-mode .device-table .sub-th {
+  background-color: #1f1f2f;
 }
 
-@media (max-width: 640px) {
-  .device-row {
-    grid-template-columns: 1fr 60px 60px;
-  }
+.device-table-card.dark-mode .device-table tr:hover {
+  background-color: #333;
+}
+
+.device-table-card.light-mode {
+  background-color: #ffffff;
+  color: #222;
+}
+
+.device-table-card.light-mode .device-table thead,
+.device-table-card.light-mode .device-table .sub-th {
+  background-color: #f3f3f3;
+}
+
+.device-table-card.light-mode .device-table tr:hover {
+  background-color: #eee;
+}
+
+.table-title {
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.comm-status.on {
+  color: #4ade80;
+  font-weight: bold;
+}
+
+.comm-status.off {
+  color: #f87171;
+  font-weight: bold;
 }
 </style>

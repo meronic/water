@@ -22,25 +22,12 @@ export default ({ mode }) => {
   return defineConfig({
     base: process.env.VITE_BASE_URL,
     server: {
-      proxy: {
-        '/hiway': 'http://172.17.10.68',
-        '/api': {
-          // 개발용
-          // target: 'http://localhost:8144',
-          // 운영용
-          target: 'http://172.17.10.69:8144',
-          changeOrigin: true,
-          rewrite: path => path.replace(/^\/api/, '/tankmonitoring')
-        },
-        '/hls': {
-          // 개발용
-          // target: 'http://localhost:8144/tankmonitoring',
-          // 운영용
-          target: 'http://localhost:8144/tankmonitoring',
-          changeOrigin: true,
-          rewrite: path => path.replace(/^\/hls/, '/tankmonitoring/hls')
-        },
-      },
+      // 🔧 Mock 모드: API 프록시 비활성화 (로컬 Mock 데이터만 사용)
+      // 백엔드 없이 UI 테스트용
+      // proxy: {
+      //   '/hiway': 'http://172.17.10.68',
+      //   '/api': { target: 'http://localhost:8144', ... },
+      // },
     },
     plugins: [
       vue(),

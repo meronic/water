@@ -7,7 +7,8 @@ import dayjs from 'dayjs'
 import router from '@/router'
 import { useUserStore } from '@hiway/stores/user'
 import { useLogsStore } from '@hiway/stores/logs'
-
+// 🧪 Mock 모드 확인
+const isMockMode = () => themeConfig.app.onlyMockup === true
 let loadingQueue = []
 const ladingTerm = 500
 let swal = null
@@ -87,18 +88,29 @@ service.interceptors.request.use(
     }
 
     // header 구성
-    if (config.meta.authToken) {
-      config.headers['X-Auth-Token'] = config.meta.authToken
+    const token = config.meta.authToken || getToken()
+    config.headers['X-Auth-Token'] = token
+    
+    // 🔍 디버그: 요청 시 토큰 확인
+    if (!token) {
+      console.warn('⚠️ [REQUEST] 토큰 없음!', {
+        url: config.url,
+        method: config.method,
+      })
     } else {
-      config.headers['X-Auth-Token'] = getToken()
+      console.log('✅ [REQUEST] 토큰 포함:', {
+        url: config.url,
+        method: config.method,
+        token: token.substring(0, 20) + '...',
+      })
     }
+    
     configSetting.headers['X-APIVERSION'] = config.meta.apiVersion
     configSetting.headers['X-LOGKEY'] = logKey
     configSetting.headers['X-CHANNEL'] = `WEB_${logsStore.agentType}`
     configSetting.headers['X-VNAME'] = 'UI'
     configSetting.headers['X-LANG'] = localStorage.getItem('locale') || 'ko'
-    configSetting.headers['X-MID'] = logsStore.name
-    configSetting.headers['X-Auth-Token'] = getToken()    
+    configSetting.headers['X-MID'] = logsStore.name    
     configSetting.headers['X-CALLTYPE'] = '0'
     configSetting.headers['X-APP'] = systemCode    
 
@@ -177,10 +189,12 @@ service.interceptors.response.use(
     }
     
     if (meta.useTokenUpdate) {      
-      if (response.headers['hiway-x-auth-token']) {
-        setToken(response.headers['hiway-x-auth-token'])
+      const token = response.headers['hiway-x-auth-token'] || response.headers['x-auth-token']
+      if (token) {
+        console.log('✅ 토큰 업데이트:', token.substring(0, 20) + '...')
+        setToken(token)
       } else {
-        setToken(response.headers['x-auth-token'])
+        console.warn('⚠️ 토큰 헤더 없음. 응답 헤더:', Object.keys(response.headers))
       }
     }
 
@@ -216,19 +230,52 @@ service.interceptors.response.use(
       if (error.response.data && error.response.data.result && error.response.data.result.desc) {
         msg = error.response.data.result.desc
       }
+      
+      // 🔍 API 상세 정보 로깅
+      console.warn('⚠️  [API ERROR]', {
+        status: error.response.status,
+        url: error.config?.url,
+        method: error.config?.method,
+        message: msg,
+      })
+      
       if(meta.useAuth && error.response.status === 401) {
-        // 401 error
-        msg = '세션이 완료되었거나, 로그인이 실패되었습니다.'
+        // 401 error - Mock 모드에서는 무시
+        if (isMockMode()) {
+          console.log('🧪 Mock 모드: 401 에러 무시하고 계속 진행')
+          return Promise.resolve({})
+        }
+        
+        console.warn('❌ 401 Unauthorized - 토큰 유효하지 않음 또는 만료됨')
+        msg = '인증이 실패했습니다. 다시 로그인해주세요.'
+        removeToken()
         useUserStore().clear()
+        // 로그인 페이지로 리다이렉트
+        setTimeout(() => {
+          console.log('➡️  로그인 페이지로 리다이렉트')
+          router.push('/login')
+        }, 500)
       } else if(meta.useAuth && error.response.status === 403) {
-        // 403 error
+        // 403 error - 권한 부족
+        console.warn('⛔ 403 Forbidden - 권한 부족')
+        msg = '접근 권한이 없습니다.'
       }
 
       status = error.response.status    
+    } else if (isMockMode()) {
+      // 🧪 Mock 모드: 네트워크 에러도 무시
+      console.warn('🧪 Mock 모드: 네트워크 에러 무시하고 계속 진행', error.message)
+      return Promise.resolve({})
     }
 
-    if(meta.useErrorMessage) {
+    if(meta.useErrorMessage && !isMockMode()) {
       swal({ icon: 'error', text:msg, width: 500 })
+    }
+    
+    // 🧪 Mock 모드: 에러 무시하고 계속 진행
+    if (isMockMode()) {
+      console.log('🧪 Mock 모드: 에러 무시')
+      return Promise.resolve({})
     }
           
     return Promise.reject(error)    

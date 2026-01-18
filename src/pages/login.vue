@@ -25,9 +25,12 @@ const router = useRouter()
 const userStore = useUserStore()
 const menuStore = useMenuStore()
 
+// 🧪 Mock 모드: 기본값 자동 입력
+const isMockMode = themeConfig.app.onlyMockup === true
+
 const loginForm = ref({
-  user_id: '',
-  password: '',
+  user_id: isMockMode ? 'admin' : '',
+  password: isMockMode ? 'admin' : '',
   remember: false,
 })
 
@@ -101,6 +104,16 @@ const fnResetPassword = () => {
 watch(() => resetPasswordModalVisible.value, newValue => {
   if(newValue) return
   refResetPasswordVForm.value?.reset()  
+})
+
+// 🧪 Mock 모드: 자동 로그인
+onMounted(() => {
+  if (isMockMode) {
+    console.log('🧪 Mock 모드: 3초 후 자동 로그인 시작...')
+    setTimeout(() => {
+      signIn()
+    }, 1000)
+  }
 })
 </script>
 

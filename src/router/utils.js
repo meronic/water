@@ -6,12 +6,28 @@
 import { useMenuStore } from "@hiway/stores/menu"
 import EventHandler from '@hiway/utils/eventHandler'
 import { getToken, removeToken, getIsBeforeRemoveToken, removeIsBeforeRemoveToken } from '@hiway/utils/token'
+import { themeConfig } from '@themeConfig'
 
-export const isUserLoggedIn = () => !!(localStorage.getItem('userData') && localStorage.getItem('accessToken'))
+export const isUserLoggedIn = () => !!(getToken())
+
+// ✅ Mock 모드: 권한 체크 비활성화 (UI 테스트 전용)
+export const isMockMode = () => themeConfig.app.onlyMockup === true
 
 // eslint-disable-next-line sonarjs/cognitive-complexity
 export const canNavigator = to => {  
+  // 🔧 Mock 모드: 모든 페이지 접근 허용
+  if (isMockMode()) {
+    console.log('🧪 Mock 모드: 권한 체크 생략, 모든 페이지 접근 허용')
+    return true
+  }
+
   const menuStore = useMenuStore()
+
+  // ✅ 권한 체크 실패 시 fallback: dashboard 접근 허용
+  // (관리자 계정이 메뉴 미로드되어 있어도 기본 페이지 접근 가능)
+  if (!menuStore.menus || menuStore.menus.length === 0) {
+    return true
+  }
 
   const permittedMenus = menuStore.menus
   
@@ -37,17 +53,6 @@ export const canNavigator = to => {
           return true
         }
       }
-
-      // if (permittedPathArr[permittedPathArr.length - 1] === '**') {
-      //   const checkingPathArr = to.path.split('/')
-      //   const arrLength = permittedPathArr.length
-      //   for (const i = 0; i < arrLength; i++) {
-      //     if (permittedPathArr[i] !== checkingPathArr[i]) {
-      //       return false
-      //     }
-      //   }
-      //   return true
-      // }
     }
     
     return menu.href === to.path
@@ -84,6 +89,17 @@ export const atuhCheck = (to, from, next) => {
     }
   }
 
+  // 🧪 Mock 모드: 권한 체크 비활성화, 모든 페이지 즉시 접근 허용
+  if (isMockMode()) {
+    // 로그인 토큰 없으면 mock token 설정
+    if (!getToken()) {
+      console.log('🧪 Mock 모드: 임시 토큰 설정')
+      const mockToken = 'mock-admin-token-' + Date.now()
+      localStorage.setItem('mockToken', mockToken)
+    }
+    return next()
+  }
+
   // 로그인 시
   if(getToken()) {  
     if(isMenuLoaded()) {
@@ -95,6 +111,11 @@ export const atuhCheck = (to, from, next) => {
         return next('/not-authorized')
       }
     } else {
+      // ✅ 메뉴 미로드 시에도 기본 경로는 허용 (타임아웃 대비)
+      if (to.path === '/' || to.path.includes('dashboard')) {
+        return next()
+      }
+      
       EventHandler.once(() => {
         if(canNavigator(to)) {
           // 권한있는 메뉴

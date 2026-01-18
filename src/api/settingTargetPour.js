@@ -1,7 +1,6 @@
 import axiosIns from '@/lib/http'
 import request from '@/utils/request'
 import { isUseAPI } from '@hiway/utils/check'
-import mockTargetPours from './mock/targetPours.json'
 
 const contextPath = import.meta.env.VITE_API_BASE_URL
 
@@ -25,13 +24,7 @@ export async function getTargetPourListRaw({ ship_no, tank_name }) {
       },
       params: { ship_no, tank_name }
     })    
-  }
-  
-  // Mock 데이터 필터링
-  const filtered = mockTargetPours.filter(tp =>
-    tp.ship_no === ship_no && tp.tank_name === tank_name
-  )
-  return filtered
+  } 
 }
 
 /** 정규화된 높이 배열만 반환 (오름차순, 숫자만) */

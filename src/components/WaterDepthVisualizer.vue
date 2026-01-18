@@ -1,51 +1,50 @@
+<!-- components/WaterDepthVisualizer.vue -->
 <template>
-  <div class="water-depth-card">
+  <div class="water-depth-box">
     <div class="water-container">
-      <div class="water-fill" :style="{ height: waterHeight + '%' }" />
-      <div class="water-label">{{ currentHeight.toFixed(1) }} m</div>
+      <div
+        class="water-fill"
+        :style="{ height: waterHeight + '%' }"
+      />
+      <div class="water-label">
+        {{ currentHeight.toFixed(1) }} m
+      </div>
     </div>
     <div class="water-info">
-      {{ actualVolume }} / {{ targetVolume }} m³
+      <p>{{ actualVolume }} / {{ targetVolume }} m³</p>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
-
 const props = defineProps({
-  targetVolume: { type: Number, required: true }, // 목표 체적
-  actualVolume: { type: Number, required: true }, // 현재 체적
-  squareSize: { type: Number, default: 10 }, // 한 변 길이(m)
+  targetVolume: { type: Number, required: true },   // 목표값
+  actualVolume: { type: Number, required: true },   // 실적값
+  squareSize: { type: Number, default: 10 },        // 정사각형 한 변 (m)
 })
 
-const area = computed(() => props.squareSize ** 2)
-const currentHeight = computed(() => (props.actualVolume / area.value) || 0)
-const maxHeight = computed(() => (props.targetVolume / area.value) || 1)
-const waterHeight = computed(() => {
-  const percent = (currentHeight.value / maxHeight.value) * 100
-  return Math.min(100, Math.max(0, percent))
-})
+const area = props.squareSize ** 2
+const currentHeight = props.actualVolume / area
+const maxHeight = props.targetVolume / area
+const waterHeight = (currentHeight / maxHeight) * 100
 </script>
 
 <style scoped>
-.water-depth-card {
+.water-depth-box {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 100%;
-  max-width: 220px;
+  width: 200px;
   font-size: 12px;
-  color: #cbd5f5;
+  color: #ccc;
 }
 
 .water-container {
   position: relative;
   width: 100%;
-  height: 160px;
-  border-radius: 12px;
-  border: 2px solid rgba(148, 163, 184, 0.5);
-  background-color: rgba(15, 23, 42, 0.8);
+  height: 100%;
+  border: 2px solid #ccc;
+  background-color: #1a1a1a;
   overflow: hidden;
 }
 
@@ -53,28 +52,22 @@ const waterHeight = computed(() => {
   position: absolute;
   bottom: 0;
   width: 100%;
-  background: linear-gradient(180deg, #60a5fa, #2563eb);
+  background-color: #3b82f6;
   transition: height 0.5s ease;
 }
 
 .water-label {
   position: absolute;
-  top: 6px;
+  top: 4px;
   width: 100%;
   text-align: center;
-  font-weight: 700;
+  font-weight: bold;
   font-size: 12px;
   color: white;
 }
 
 .water-info {
-  margin-top: 6px;
+  margin-top: 4px;
   text-align: center;
-}
-
-@media (max-width: 600px) {
-  .water-container {
-    height: 140px;
-  }
 }
 </style>

@@ -42,3 +42,40 @@ logger.init(app)
 app.mount('#app')
 
 window._vue = app
+
+// 🔍 디버깅용 전역 함수 추가
+window.__DEBUG__ = {
+  checkToken: () => {
+    const token = window.sessionStorage.getItem('Token')
+    console.log('📌 Token:', token ? token.substring(0, 30) + '...' : 'NONE')
+    return token
+  },
+  checkLocalStorage: () => {
+    console.log('📌 LocalStorage:', {
+      userData: localStorage.getItem('userData'),
+      accessToken: localStorage.getItem('accessToken'),
+      access_token: localStorage.getItem('access_token'),
+    })
+  },
+  checkSessionStorage: () => {
+    console.log('📌 SessionStorage:', {
+      Token: window.sessionStorage.getItem('Token') ? 'EXISTS' : 'NONE',
+    })
+  },
+  checkAPI: () => {
+    console.log('📌 API 설정:', {
+      VITE_HIWAY_API_URL: import.meta.env.VITE_HIWAY_API_URL,
+      VITE_API_BASE_URL: import.meta.env.VITE_API_BASE_URL,
+    })
+  },
+  fullDiagnosis: () => {
+    console.group('🔍 AUTH FULL DIAGNOSIS')
+    window.__DEBUG__.checkToken()
+    window.__DEBUG__.checkLocalStorage()
+    window.__DEBUG__.checkSessionStorage()
+    window.__DEBUG__.checkAPI()
+    console.groupEnd()
+  },
+}
+
+console.log('💡 디버깅: 콘솔에서 __DEBUG__.fullDiagnosis() 실행')
